@@ -65,6 +65,8 @@ h3{margin:0 0 4px;font-size:14px}
       <div id="bars" style="margin-top:8px"></div>
       <div id="lvl" style="margin-top:8px"></div>
     </div>
+    <div class="card"><h3>📨 Signal Card <button id="copy" style="float:right;padding:3px 10px;font-size:12px">Copy</button></h3>
+      <pre id="card" style="white-space:pre-wrap;margin:8px 0 0;font:13px/1.6 system-ui,'Iskoola Pota',sans-serif">—</pre></div>
     <div class="card"><h3>📈 Technical විශ්ලේෂණය</h3><ul id="l_t"></ul></div>
     <div class="card"><h3>🏗️ Fundamental විශ්ලේෂණය</h3><ul id="l_f"></ul></div>
     <div class="card"><h3>🧠 Sentiment විශ්ලේෂණය</h3><ul id="l_s"></ul></div>
@@ -307,6 +309,31 @@ async function run(){
        <div class="row"><span>Take-profit 2 (1:3)</span><b class="buy">${fmt(tp2)}</b></div>`;
     $("sr").innerHTML=`<div class="row"><span class="sell">Resistance (ඉහළ)</span><span>${T.lv.res.map(fmt).join(" · ")||"—"}</span></div>
       <div class="row"><span class="buy">Support (පහළ)</span><span>${T.lv.sup.map(fmt).join(" · ")||"—"}</span></div>`;
+    // ---- Telegram-style signal card ----
+    const isN=cls==="neu",dL=isN?T.score>=0:long;
+    const trig=isN?(dL?(R1||p):(S1||p)):p;
+    const slc=isN?(dL?trig-1.5*A:trig+1.5*A):sl;
+    const rk=Math.abs(trig-slc),slPct=rk/trig;
+    const lev=Math.max(1,Math.min(10,Math.floor(0.5/slPct)));
+    const wallet=Math.min(100,0.02/(slPct*lev)*100); // % of wallet as margin so SL loss ≈ 2% of wallet
+    const tps=[1,2,3,4].map(k=>({v:dL?trig+k*rk:trig-k*rk,roi:k*slPct*lev*100}));
+    const n1=["1️⃣","2️⃣","3️⃣","4️⃣"];
+    const entryTxt=isN?`${dL?"Candle close above":"Candle close below"} ${fmt(trig)} (breakout, තවම trigger වෙලා නැහැ)`:`Market Price (${fmt(p)})`;
+    const txt=`${base}USDT ${dL?"📈 LONG":"📉 SHORT"}${isN?"  ⏳ (Conditional)":""}
+Leverage: ${lev}X (Isolated)
+
+➡️ Entry : ${entryTxt}
+
+🏆 Take Profit
+${tps.map((t,i)=>`${n1[i]} ${fmt(t.v)}  (+${t.roi.toFixed(0)}%)`).join("\n")}
+
+❌ Stop Loss : ${fmt(slc)}
+
+💼 Wallet Size: ${wallet.toFixed(1)}% (SL වැදුනොත් wallet එකෙන් ≈2% ක් පමණක් නැති වෙනවා)
+⏱ Timeframe: ${tf} · Score: ${tot.toFixed(0)}/100
+⚠️ Risk manage කරන්න. Financial advice නෙවෙයි.`;
+    $("card").textContent=txt;
+    $("copy").onclick=()=>{navigator.clipboard.writeText(txt).then(()=>{$("copy").textContent="Copied ✓";setTimeout(()=>$("copy").textContent="Copy",1500)})};
     $("status").textContent="යාවත්කාලීන: "+new Date().toLocaleTimeString();
   }catch(e){$("status").textContent="❌ "+e.message}
 }
