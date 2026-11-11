@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="si">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crypto Analyzer – Full Analysis & Signal</title>
+<style>
+:root{--bg:#0e1117;--card:#161b24;--bd:#252c3a;--tx:#e6e9ef;--mt:#8b94a7;--g:#16c784;--r:#ea3943;--y:#f0b90b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,"Iskoola Pota","Noto Sans Sinhala",sans-serif}
+header{padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+h1{font-size:17px;margin:0 8px 0 0}
+input,select,button{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;font:inherit}
+input{width:150px;text-transform:uppercase}
+button{cursor:pointer}button:hover{border-color:var(--y)}
+button.pri{background:var(--y);color:#111;font-weight:700;border:0}
+.chips{padding:8px 16px 0;display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:3px 10px;border-radius:99px;border:1px solid var(--bd);background:var(--card);cursor:pointer;font-size:12px}
+.chip:hover{border-color:var(--y)}
+main{display:grid;grid-template-columns:1fr 380px;gap:12px;padding:12px}
+@media(max-width:950px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:12px}
+canvas{width:100%;display:block}
+#sig{font-size:30px;font-weight:800;margin:2px 0}
+.buy{color:var(--g)}.sell{color:var(--r)}.neu{color:var(--y)}.mt{color:var(--mt)}
+.row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--bd)}
+.row:last-child{border:0}
+.bar{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:13px}
+.bar .n{width:92px}.bar .tr{flex:1;height:10px;background:#0b0e14;border-radius:5px;position:relative;overflow:hidden}
+.bar .tr:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#3a4357}
+.bar .f{position:absolute;top:0;bottom:0}
+.bar .v{width:52px;text-align:right}
+ul{list-style:none;padding:0;margin:6px 0 0}
+li{padding:4px 0;border-bottom:1px solid var(--bd);font-size:13px}
+li:last-child{border:0}
+h3{margin:0 0 4px;font-size:14px}
+.warn{font-size:12px;color:var(--mt);padding:0 16px 20px}
+#status{color:var(--mt)}
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 Crypto Analyzer</h1>
+  <input id="coin" list="coins" value="BTC" placeholder="Coin (BTC)">
+  <datalist id="coins"></datalist>
+  <select id="tf">
+    <option value="15m">15m</option><option value="1h">1h</option>
+    <option value="4h" selected>4h</option><option value="1d">1d</option>
+  </select>
+  <button id="go" class="pri">Analyse කරන්න</button>
+  <span id="status"></span>
+</header>
+<div class="chips" id="chips"></div>
+
+<main>
+  <section>
+    <div class="card"><canvas id="cv" height="470"></canvas></div>
+    <div class="card"><h3>📌 Support / Resistance මට්ටම්</h3><div id="sr" class="mt">—</div></div>
+  </section>
+  <aside>
+    <div class="card">
+      <div class="mt" id="pair">Coin එකක් තෝරලා Analyse ඔබන්න</div>
+      <div id="sig">—</div>
+      <div class="mt" id="conf"></div>
+      <div id="bars" style="margin-top:8px"></div>
+      <div id="lvl" style="margin-top:8px"></div>
+    </div>
+    <div class="card"><h3>📈 Technical විශ්ලේෂණය</h3><ul id="l_t"></ul></div>
+    <div class="card"><h3>🏗️ Fundamental විශ්ලේෂණය</h3><ul id="l_f"></ul></div>
+    <div class="card"><h3>🧠 Sentiment විශ්ලේෂණය</h3><ul id="l_s"></ul></div>
+  </aside>
+</main>
+<p class="warn">⚠️ මෙය අධ්‍යාපනික මෙවලමක් පමණි. Signals යනු නීති මත පදනම් වූ ඇස්තමේන්තු මිස financial advice නොවේ; වැරදිය හැකිය. අහිමි වුණාට කමක් නැති මුදලකින් පමණක් trade කරන්න, හැම විටම stop-loss භාවිතා කරන්න.</p>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=v=>v==null||isNaN(v)?"—":v>=100?v.toFixed(2):v>=1?v.toFixed(3):v.toFixed(6);
+const big=v=>v==null?"—":v>=1e9?(v/1e9).toFixed(2)+"B":v>=1e6?(v/1e6).toFixed(2)+"M":v.toFixed(0);
+const pc=v=>v==null?"—":(v>0?"+":"")+v.toFixed(1)+"%";
+
+/* ---------- indicators ---------- */
+function ema(a,p){const k=2/(p+1),o=[];let e=a[0];for(let i=0;i<a.length;i++){e=i?a[i]*k+e*(1-k):a[0];o.push(i<p-1?NaN:e)}return o}
+function sma(a,p,i){let s=0;for(let j=i-p+1;j<=i;j++)s+=a[j];return s/p}
+function rsi(c,p=14){const o=Array(c.length).fill(NaN);let g=0,l=0;
+  for(let i=1;i<=p;i++){const d=c[i]-c[i-1];d>=0?g+=d:l-=d}g/=p;l/=p;o[p]=100-100/(1+g/(l||1e-9));
+  for(let i=p+1;i<c.length;i++){const d=c[i]-c[i-1];g=(g*(p-1)+Math.max(d,0))/p;l=(l*(p-1)+Math.max(-d,0))/p;o[i]=100-100/(1+g/(l||1e-9))}return o}
+function macd(c){const f=ema(c,12),s=ema(c,26),m=c.map((_,i)=>f[i]-s[i]);const sg=ema(m.map(v=>isNaN(v)?0:v),9);return{m,s:sg,h:m.map((v,i)=>v-sg[i])}}
+function boll(c,p=20,k=2){const u=[],l=[];for(let i=0;i<c.length;i++){if(i<p-1){u.push(NaN);l.push(NaN);continue}
+  const m=sma(c,p,i);let v=0;for(let j=i-p+1;j<=i;j++)v+=(c[j]-m)**2;const sd=Math.sqrt(v/p);u.push(m+k*sd);l.push(m-k*sd)}return{u,l}}
+function atr(d,p=14){let a=0;for(let i=d.length-p;i<d.length;i++){const pc=d[i-1].c;a+=Math.max(d[i].h-d[i].l,Math.abs(d[i].h-pc),Math.abs(d[i].l-pc))}return a/p}
+
+function levels(d){ // swing high/low clustering
+  const w=5,pts=[];const s=Math.max(w,d.length-200);
+  for(let i=s;i<d.length-w;i++){
+    let hi=true,lo=true;
+    for(let j=i-w;j<=i+w;j++){if(d[j].h>d[i].h)hi=false;if(d[j].l<d[i].l)lo=false}
+    if(hi)pts.push(d[i].h);if(lo)pts.push(d[i].l);
+  }
+  pts.sort((a,b)=>a-b);const cl=[],tol=0.012;
+  pts.forEach(p=>{const last=cl[cl.length-1];if(last&&Math.abs(p-last.p)/last.p<tol){last.p=(last.p*last.n+p)/(last.n+1);last.n++}else cl.push({p,n:1})});
+  const price=d[d.length-1].c;
+  const sup=cl.filter(x=>x.p<price).sort((a,b)=>b.p-a.p).slice(0,3).map(x=>x.p);
+  const res=cl.filter(x=>x.p>price).sort((a,b)=>a.p-b.p).slice(0,3).map(x=>x.p);
+  return{sup,res};
+}
+
+function pattern(d){
+  const n=d.length-1,k=d[n],p=d[n-1];
+  const body=Math.abs(k.c-k.o),rng=k.h-k.l||1e-9,up=k.h-Math.max(k.o,k.c),lw=Math.min(k.o,k.c)-k.l;
+  if(p.c<p.o&&k.c>k.o&&k.o<=p.c&&k.c>=p.o)return{pts:1,t:"Bullish Engulfing candle (මිල ඉහළ හැරීමේ සංඥාවක්)"};
+  if(p.c>p.o&&k.c<k.o&&k.o>=p.c&&k.c<=p.o)return{pts:-1,t:"Bearish Engulfing candle (මිල පහළ හැරීමේ සංඥාවක්)"};
+  if(body>0&&lw>=2*body&&up<=body*.6)return{pts:.7,t:"Hammer candle (පහළින් මිල ආධාරය ලැබෙනවා)"};
+  if(body>0&&up>=2*body&&lw<=body*.6)return{pts:-.7,t:"Shooting Star candle (ඉහළින් මිල ප්‍රතික්ෂේප වෙනවා)"};
+  if(body/rng<.1)return{pts:0,t:"Doji candle (වෙළඳපොළ අවිනිශ්චිතයි)"};
+  return null;
+}
+
+/* ---------- category scoring ---------- */
+function add(L,pts,max,t){L.push({pts,max,t})}
+function catScore(L){const m=L.reduce((a,x)=>a+x.max,0);return m?Math.max(-100,Math.min(100,L.reduce((a,x)=>a+x.pts,0)/m*100)):null}
+
+function technical(d,hd,tf){
+  const L=[],c=d.map(x=>x.c),n=c.length-1,p=c[n];
+  const e20=ema(c,20),e50=ema(c,50),e200=ema(c,200),r=rsi(c),M=macd(c),B=boll(c),A=atr(d);
+  if(e20[n]>e50[n])add(L,1,1,`EMA20 (${fmt(e20[n])}) > EMA50 (${fmt(e50[n])}) → short-term uptrend එකක්`);
+  else add(L,-1,1,`EMA20 (${fmt(e20[n])}) < EMA50 (${fmt(e50[n])}) → short-term downtrend එකක්`);
+  if(!isNaN(e200[n])){p>e200[n]?add(L,1,1,`මිල EMA200 ට උඩින් → long-term bullish`):add(L,-1,1,`මිල EMA200 ට යටින් → long-term bearish`)}
+  const R=r[n];
+  if(R<30)add(L,1.5,1.5,`RSI ${R.toFixed(0)} → oversold, ඉහළ හැරීමට ඉඩ තියෙනවා`);
+  else if(R>70)add(L,-1.5,1.5,`RSI ${R.toFixed(0)} → overbought, පහළට හැරීමට ඉඩ තියෙනවා`);
+  else if(R>50)add(L,.5,1.5,`RSI ${R.toFixed(0)} → bullish පැත්තේ`);
+  else add(L,-.5,1.5,`RSI ${R.toFixed(0)} → bearish පැත්තේ`);
+  M.h[n]>0?add(L,1,1,"MACD histogram ධන (momentum ඉහළට)"):add(L,-1,1,"MACD histogram ඍණ (momentum පහළට)");
+  if(M.h[n-1]<=0&&M.h[n]>0)add(L,1,1,"අලුත් MACD bullish cross එකක්");
+  else if(M.h[n-1]>=0&&M.h[n]<0)add(L,-1,1,"අලුත් MACD bearish cross එකක්");
+  if(p<B.l[n])add(L,1,1,"මිල Bollinger පහළ band එකට වඩා පහළයි (oversold)");
+  else if(p>B.u[n])add(L,-1,1,"මිල Bollinger ඉහළ band එකට වඩා ඉහළයි (overbought)");
+  // volume
+  const vAvg=d.slice(-23,-3).reduce((a,x)=>a+(x.v||0),0)/20,vNow=d.slice(-3).reduce((a,x)=>a+(x.v||0),0)/3,vr=vNow/(vAvg||1);
+  const dir=c[n]>c[n-3]?1:-1;
+  if(vr>1.4)add(L,dir,1,`Volume සාමාන්‍යයට වඩා ${vr.toFixed(1)}× වැඩියි, ${dir>0?"ඉහළ යෑමට":"පහළ යෑමට"} volume සහාය තියෙනවා`);
+  else add(L,0,1,`Volume සාමාන්‍ය මට්ටමේ (${vr.toFixed(1)}×)`);
+  // candle
+  const pt=pattern(d);if(pt)add(L,pt.pts,1,pt.t);
+  // S/R
+  const lv=levels(d);
+  if(lv.sup[0]&&(p-lv.sup[0])/p<.015)add(L,1,1,`ආසන්න support එකක් (${fmt(lv.sup[0])}) ළඟයි → බෝල්ස් හැරීමට ඉඩ`);
+  if(lv.res[0]&&(lv.res[0]-p)/p<.015)add(L,-1,1,`ආසන්න resistance එකක් (${fmt(lv.res[0])}) ළඟයි → මිල නවතින්න ඉඩ`);
+  // higher timeframe
+  let htNote="";
+  if(hd&&hd.length>60){
+    const hc=hd.map(x=>x.c),h=hc.length-1,h20=ema(hc,20),h50=ema(hc,50),hr=rsi(hc);
+    const up=h20[h]>h50[h]&&hr[h]>50,down=h20[h]<h50[h]&&hr[h]<50;
+    if(up)add(L,1.5,1.5,`ඉහළ timeframe (${tf==="1d"?"1w":"1d"}) trend එක bullish → trend එක සමඟ trade කරන එක ආරක්ෂිතයි`);
+    else if(down)add(L,-1.5,1.5,`ඉහළ timeframe (${tf==="1d"?"1w":"1d"}) trend එක bearish → trend එකට විරුද්ධව buy කරන්න අවදානමක්`);
+    else add(L,0,1.5,`ඉහළ timeframe (${tf==="1d"?"1w":"1d"}) trend එක පැහැදිලි නැහැ (sideways)`);
+  }
+  return{L,score:catScore(L),e20,e50,B,r,A,lv,p};
+}
+
+function fundamental(g){
+  if(!g)return{L:[],score:null};
+  const L=[],m=g.market_data||{};
+  const rk=g.market_cap_rank;
+  if(rk){rk<=10?add(L,1,1,`Market cap rank #${rk} → ලොකුම, ස්ථාවරම coins අතරයි`):rk<=50?add(L,.5,1,`Market cap rank #${rk} → ලොකු project එකක්`):rk>200?add(L,-1,1,`Market cap rank #${rk} → කුඩා/අවදානම් සහිත coin එකක්`):add(L,0,1,`Market cap rank #${rk} → මධ්‍යම ප්‍රමාණයේ`)}
+  const ath=m.ath_change_percentage&&m.ath_change_percentage.usd;
+  if(ath!=null){ath>-25?add(L,.5,.5,`ATH එකෙන් ${ath.toFixed(0)}% පමණක් පහළයි → ශක්තිමත් momentum`):ath<-80?add(L,-.5,.5,`ATH එකෙන් ${ath.toFixed(0)}% පහළයි → දිගුකාලීන දුර්වලතාවයක්`):add(L,0,.5,`ATH එකෙන් ${ath.toFixed(0)}% පහළයි`)}
+  const d30=m.price_change_percentage_30d,d7=m.price_change_percentage_7d;
+  if(d30!=null){d30>15?add(L,.5,.5,`පසුගිය දින 30 ${pc(d30)} → ශක්තිමත් වර්ධනයක්`):d30<-20?add(L,-.5,.5,`පසුගිය දින 30 ${pc(d30)} → දුර්වල ප්‍රවණතාවයක්`):add(L,0,.5,`පසුගිය දින 30: ${pc(d30)}`)}
+  if(d7!=null)L.push({pts:0,max:0,t:`පසුගිය දින 7: ${pc(d7)}`});
+  const cs=m.circulating_supply,ms=m.max_supply||m.total_supply;
+  if(cs&&ms){const q=cs/ms;
+    q>.8?add(L,.7,.7,`Supply එකෙන් ${(q*100).toFixed(0)}% දැනටමත් සංසරණයේ → අලුත් unlock/dilution අවදානම අඩුයි`):
+    q<.4?add(L,-.7,.7,`Supply එකෙන් ${(q*100).toFixed(0)}% පමණයි සංසරණයේ → අනාගත token unlock නිසා මිල පහළ යෑමට පුළුවන්`):
+    add(L,0,.7,`Supply එකෙන් ${(q*100).toFixed(0)}% සංසරණයේ`)}
+  const fdv=m.fully_diluted_valuation&&m.fully_diluted_valuation.usd,mc=m.market_cap&&m.market_cap.usd;
+  if(fdv&&mc){const q=fdv/mc;q>3?add(L,-1,1,`FDV/Market cap = ${q.toFixed(1)}× → ඉහළ dilution අවදානමක්`):q<1.5?add(L,.5,1,`FDV/Market cap = ${q.toFixed(1)}× → dilution අවදානම අඩුයි`):add(L,0,1,`FDV/Market cap = ${q.toFixed(1)}×`)}
+  const vol=m.total_volume&&m.total_volume.usd;
+  if(vol&&mc){const q=vol/mc;q>.02?add(L,.5,.5,`ද්‍රවශීලතාව හොඳයි (24h volume = market cap එකෙන් ${(q*100).toFixed(1)}%)`):q<.005?add(L,-.5,.5,`ද්‍රවශීලතාව අඩුයි (24h volume = ${(q*100).toFixed(2)}%)`):add(L,0,.5,`ද්‍රවශීලතාව සාමාන්‍යයි (${(q*100).toFixed(1)}%)`)}
+  if(mc)L.push({pts:0,max:0,t:`Market cap: $${big(mc)}${cs?` · Circulating supply: ${big(cs)}`:""}${g.categories&&g.categories[0]?` · වර්ගය: ${g.categories[0]}`:""}`});
+  return{L,score:catScore(L)};
+}
+
+function sentiment(fng,g,fr,ls){
+  const L=[];
+  if(fng){const v=+fng.value;
+    if(v<=25)add(L,1,1,`Fear & Greed = ${v} (Extreme Fear) → බොහෝ දෙනා බයයි; contrarian buy අවස්ථාවක් විය හැක`);
+    else if(v<=45)add(L,.3,1,`Fear & Greed = ${v} (Fear) → වෙළඳපොළ සුළු බියක`);
+    else if(v>=75)add(L,-1,1,`Fear & Greed = ${v} (Extreme Greed) → අධික ලෝභය; correction එකක් එන්න පුළුවන්`);
+    else if(v>=55)add(L,-.3,1,`Fear & Greed = ${v} (Greed) → ඉහළ optimism, ප්‍රවේශම් වෙන්න`);
+    else add(L,0,1,`Fear & Greed = ${v} (Neutral)`)}
+  const up=g&&g.sentiment_votes_up_percentage;
+  if(up!=null){up>65?add(L,.5,.5,`Community එකෙන් ${up.toFixed(0)}% ක් bullish`):up<40?add(L,-.5,.5,`Community එකෙන් ${up.toFixed(0)}% ක් පමණක් bullish`):add(L,0,.5,`Community bullish ${up.toFixed(0)}%`)}
+  if(fr!=null){const f=fr*100;
+    f>.05?add(L,-1,1,`Funding rate ${f.toFixed(3)}% → Long ගොඩක් එකතු වෙලා, long squeeze අවදානමක්`):
+    f<-.01?add(L,.5,1,`Funding rate ${f.toFixed(3)}% → Short ගොඩක්, short squeeze වෙන්න පුළුවන්`):
+    add(L,0,1,`Funding rate ${f.toFixed(3)}% (සාමාන්‍ය)`)}
+  if(ls!=null){ls>2?add(L,-.5,.5,`Long/Short ratio ${ls.toFixed(2)} → Longs අධිකයි`):ls<.8?add(L,.5,.5,`Long/Short ratio ${ls.toFixed(2)} → Shorts අධිකයි`):add(L,0,.5,`Long/Short ratio ${ls.toFixed(2)}`)}
+  return{L,score:catScore(L)};
+}
+
+/* ---------- data ---------- */
+async function jget(u){const r=await fetch(u);if(!r.ok)throw new Error(r.status);return r.json()}
+async function klines(sym,tf,lim=300){
+  return (await jget(`https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${tf}&limit=${lim}`)).map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+}
+async function gecko(base){
+  const b=base.replace(/^1000+/,"");
+  const s=await jget(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(b)}`);
+  const m=(s.coins||[]).filter(c=>c.symbol.toUpperCase()===b.toUpperCase()).sort((a,b)=>(a.market_cap_rank||1e9)-(b.market_cap_rank||1e9))[0];
+  if(!m)return null;
+  return jget(`https://api.coingecko.com/api/v3/coins/${m.id}?localization=false&tickers=false&community_data=false&developer_data=false&sparkline=false`);
+}
+
+/* ---------- chart ---------- */
+function draw(d,T){
+  const cv=$("cv"),dpr=devicePixelRatio||1,W=cv.clientWidth,H=470;
+  cv.width=W*dpr;cv.height=H*dpr;const x=cv.getContext("2d");x.scale(dpr,dpr);x.clearRect(0,0,W,H);
+  const N=110,s=d.length-N,pad=62,ph=340,rh=90,gap=20,vis=d.slice(s);
+  let hi=-1e18,lo=1e18;vis.forEach((k,i)=>{hi=Math.max(hi,k.h);lo=Math.min(lo,k.l)});
+  const Y=v=>10+(hi-v)/(hi-lo)*(ph-20),cw=(W-pad)/N,X=i=>i*cw+cw/2;
+  x.font="11px system-ui";x.lineWidth=1;
+  for(let i=0;i<=5;i++){const v=lo+(hi-lo)*i/5,y=Y(v);x.strokeStyle="#252c3a";x.beginPath();x.moveTo(0,y);x.lineTo(W-pad,y);x.stroke();x.fillStyle="#8b94a7";x.fillText(fmt(v),W-pad+4,y+3)}
+  const line=(a,col,w=1.4)=>{x.strokeStyle=col;x.lineWidth=w;x.beginPath();let st=false;for(let i=0;i<N;i++){const v=a[s+i];if(isNaN(v))continue;st?x.lineTo(X(i),Y(v)):x.moveTo(X(i),Y(v));st=true}x.stroke()};
+  line(T.B.u,"#4a5568",1);line(T.B.l,"#4a5568",1);
+  vis.forEach((k,i)=>{const up=k.c>=k.o;x.strokeStyle=x.fillStyle=up?"#16c784":"#ea3943";x.lineWidth=1;
+    x.beginPath();x.moveTo(X(i),Y(k.h));x.lineTo(X(i),Y(k.l));x.stroke();
+    const t=Y(Math.max(k.o,k.c)),b=Y(Math.min(k.o,k.c));x.fillRect(X(i)-cw*.35,t,cw*.7,Math.max(1,b-t))});
+  line(T.e20,"#f0b90b");line(T.e50,"#4c9aff");
+  const lv=(v,col,t)=>{if(v<lo||v>hi)return;x.strokeStyle=col;x.lineWidth=1;x.setLineDash([5,4]);x.beginPath();x.moveTo(0,Y(v));x.lineTo(W-pad,Y(v));x.stroke();x.setLineDash([]);x.fillStyle=col;x.fillText(t+" "+fmt(v),6,Y(v)-3)};
+  T.lv.sup.forEach(v=>lv(v,"#16c78899","S"));T.lv.res.forEach(v=>lv(v,"#ea394399","R"));
+  x.fillStyle="#f0b90b";x.fillText("EMA20",6,14);x.fillStyle="#4c9aff";x.fillText("EMA50",56,14);x.fillStyle="#8b94a7";x.fillText("Bollinger",110,14);
+  const oy=ph+gap,RY=v=>oy+(100-v)/100*rh;
+  [30,50,70].forEach(v=>{x.strokeStyle="#252c3a";x.lineWidth=1;x.beginPath();x.moveTo(0,RY(v));x.lineTo(W-pad,RY(v));x.stroke();x.fillStyle="#8b94a7";x.fillText(v,W-pad+4,RY(v)+3)});
+  x.strokeStyle="#b57bee";x.lineWidth=1.5;x.beginPath();let st=false;
+  for(let i=0;i<N;i++){const v=T.r[s+i];if(isNaN(v))continue;st?x.lineTo(X(i),RY(v)):x.moveTo(X(i),RY(v));st=true}x.stroke();
+  x.fillStyle="#b57bee";x.fillText("RSI 14",6,oy+12);
+}
+
+/* ---------- render ---------- */
+function list(id,o,empty){
+  $(id).innerHTML=o.L.length?o.L.map(x=>{const ic=x.max===0?"•":x.pts>0?"▲":x.pts<0?"▼":"●",cl=x.max===0?"mt":x.pts>0?"buy":x.pts<0?"sell":"neu";
+    return `<li><span class="${cl}">${ic}</span> ${x.t}</li>`}).join(""):`<li class="mt">${empty}</li>`;
+}
+function bar(name,v){
+  if(v==null)return `<div class="bar"><span class="n">${name}</span><span class="mt">දත්ත නැහැ</span></div>`;
+  const col=v>=0?"var(--g)":"var(--r)",w=Math.abs(v)/2;
+  return `<div class="bar"><span class="n">${name}</span><div class="tr"><div class="f" style="background:${col};width:${w}%;${v>=0?"left:50%":"right:50%"}"></div></div><span class="v ${v>=0?"buy":"sell"}">${v>0?"+":""}${v.toFixed(0)}</span></div>`;
+}
+
+async function run(){
+  const base=$("coin").value.trim().toUpperCase().replace(/USDT$/,""),sym=base+"USDT",tf=$("tf").value;
+  if(!base)return;
+  $("status").textContent="දත්ත ගන්නවා…";
+  try{
+    const ht=tf==="1d"?"1w":"1d";
+    const [kR,hR,gR,fR,frR,lsR]=await Promise.allSettled([
+      klines(sym,tf),klines(sym,ht,200),gecko(base),
+      jget("https://api.alternative.me/fng/?limit=1"),
+      jget(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${sym}`),
+      jget(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${sym}&period=1h&limit=1`)
+    ]);
+    if(kR.status!=="fulfilled")throw new Error(`"${base}" Binance එකේ USDT pair එකක් නැහැ`);
+    const d=kR.value,hd=hR.status==="fulfilled"?hR.value:null,g=gR.status==="fulfilled"?gR.value:null;
+    const fng=fR.status==="fulfilled"?fR.value.data[0]:null;
+    const fr=frR.status==="fulfilled"?+frR.value.lastFundingRate:null;
+    const ls=lsR.status==="fulfilled"&&lsR.value[0]?+lsR.value[0].longShortRatio:null;
+
+    const T=technical(d,hd,tf),F=fundamental(g),S=sentiment(fng,g,fr,ls);
+    draw(d,T);
+    list("l_t",T,"");list("l_f",F,"Fundamental දත්ත ලබාගත නොහැකි වුණා (CoinGecko එකේ මේ coin එක නැහැ හෝ rate limit එකක්). ටිකකින් නැවත උත්සාහ කරන්න.");
+    list("l_s",S,"Sentiment දත්ත ලබාගත නොහැකි වුණා.");
+
+    // weighted combine
+    const parts=[[T.score,.5],[F.score,.25],[S.score,.25]].filter(x=>x[0]!=null);
+    const wsum=parts.reduce((a,x)=>a+x[1],0),tot=parts.reduce((a,x)=>a+x[0]*x[1],0)/wsum;
+    let sig,cls;
+    if(tot>=40){sig="STRONG BUY";cls="buy"}else if(tot>=15){sig="BUY";cls="buy"}
+    else if(tot<=-40){sig="STRONG SELL";cls="sell"}else if(tot<=-15){sig="SELL";cls="sell"}
+    else{sig="WAIT / NEUTRAL";cls="neu"}
+    const signs=parts.map(x=>Math.sign(Math.round(x[0]/10))).filter(x=>x!==0);
+    const agree=signs.length>1&&signs.every(x=>x===signs[0]);
+    const conf=!signs.length?"":agree?"✅ ක්‍රම සියල්ල එකම දිශාවට එකඟයි (විශ්වාසය ඉහළ)":"⚠️ ක්‍රම අතර එකඟතාවයක් නැහැ (විශ්වාසය අඩු, ප්‍රවේශම් වෙන්න)";
+    $("pair").textContent=`${base}/USDT · ${tf} · $${fmt(T.p)}`;
+    $("sig").textContent=sig;$("sig").className=cls;
+    $("conf").textContent=`සමස්ත ලකුණු: ${tot.toFixed(0)} / 100 · ${conf}`;
+    $("bars").innerHTML=bar("Technical",T.score)+bar("Fundamental",F.score)+bar("Sentiment",S.score);
+
+    const long=tot>=0,p=T.p,A=T.A;
+    let sl=long?p-1.5*A:p+1.5*A;
+    if(long&&T.lv.sup[0]&&T.lv.sup[0]<p&&p-T.lv.sup[0]<3*A)sl=Math.min(sl,T.lv.sup[0]*.995);
+    if(!long&&T.lv.res[0]&&T.lv.res[0]>p&&T.lv.res[0]-p<3*A)sl=Math.max(sl,T.lv.res[0]*1.005);
+    const risk=Math.abs(p-sl),tp1=long?p+2*risk:p-2*risk,tp2=long?p+3*risk:p-3*risk;
+    $("lvl").innerHTML=cls==="neu"?`<div class="mt">පැහැදිලි setup එකක් නැහැ. Support/Resistance කඩන තෙක් හෝ ක්‍රම එකඟ වන තෙක් බලා සිටින එක හොඳයි.</div>`:
+      `<div class="row"><span>දිශාව</span><b class="${cls}">${long?"LONG (Buy)":"SHORT (Sell)"}</b></div>
+       <div class="row"><span>Entry</span><b>${fmt(p)}</b></div>
+       <div class="row"><span>Stop-loss</span><b class="sell">${fmt(sl)}</b></div>
+       <div class="row"><span>Take-profit 1 (1:2)</span><b class="buy">${fmt(tp1)}</b></div>
+       <div class="row"><span>Take-profit 2 (1:3)</span><b class="buy">${fmt(tp2)}</b></div>`;
+    $("sr").innerHTML=`<div class="row"><span class="sell">Resistance (ඉහළ)</span><span>${T.lv.res.map(fmt).join(" · ")||"—"}</span></div>
+      <div class="row"><span class="buy">Support (පහළ)</span><span>${T.lv.sup.map(fmt).join(" · ")||"—"}</span></div>`;
+    $("status").textContent="යාවත්කාලීන: "+new Date().toLocaleTimeString();
+  }catch(e){$("status").textContent="❌ "+e.message}
+}
+
+/* ---------- init ---------- */
+(async()=>{
+  try{
+    const t=await jget("https://api.binance.com/api/v3/ticker/24hr");
+    const u=t.filter(x=>x.symbol.endsWith("USDT")&&!/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol)&&+x.quoteVolume>1e6).sort((a,b)=>b.quoteVolume-a.quoteVolume);
+    $("coins").innerHTML=u.map(x=>`<option value="${x.symbol.replace("USDT","")}">`).join("");
+    $("chips").innerHTML="<span class='mt'>Top volume:</span>"+u.slice(0,14).map(x=>{const b=x.symbol.replace("USDT",""),c=+x.priceChangePercent;
+      return `<span class="chip" onclick="$('coin').value='${b}';run()">${b} <span class="${c>=0?"buy":"sell"}">${c.toFixed(1)}%</span></span>`}).join("");
+  }catch(e){}
+})();
+$("go").onclick=run;$("coin").onkeydown=e=>{if(e.key==="Enter")run()};$("tf").onchange=run;
+addEventListener("resize",()=>{if($("sig").textContent!=="—")run()});
+run();
+</script>
+</body>
+</html>
