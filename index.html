@@ -291,7 +291,15 @@ async function run(){
     if(long&&T.lv.sup[0]&&T.lv.sup[0]<p&&p-T.lv.sup[0]<3*A)sl=Math.min(sl,T.lv.sup[0]*.995);
     if(!long&&T.lv.res[0]&&T.lv.res[0]>p&&T.lv.res[0]-p<3*A)sl=Math.max(sl,T.lv.res[0]*1.005);
     const risk=Math.abs(p-sl),tp1=long?p+2*risk:p-2*risk,tp2=long?p+3*risk:p-3*risk;
-    $("lvl").innerHTML=cls==="neu"?`<div class="mt">පැහැදිලි setup එකක් නැහැ. Support/Resistance කඩන තෙක් හෝ ක්‍රම එකඟ වන තෙක් බලා සිටින එක හොඳයි.</div>`:
+    const R1=T.lv.res[0],S1=T.lv.sup[0],bias=T.score>=0?"bullish":"bearish";
+    const scen=cls!=="neu"?"":`<div class="mt" style="margin-bottom:6px">දැනට entry එකක් නැහැ (ක්‍රම එකඟ නැති නිසා). Technical bias: <b class="${T.score>=0?"buy":"sell"}">${bias}</b>. මිල මේ මට්ටම් කැඩුවොත් විතරක් ඇතුල් වෙන්න:</div>
+      ${R1?`<div class="row"><span class="buy">🟢 LONG: ${fmt(R1)} ට ඉහළින් candle එකක් close වුණොත්</span></div>
+      <div class="row"><span>Stop-loss</span><b class="sell">${fmt(R1-1.5*A)}</b></div>
+      <div class="row"><span>Take-profit (1:2)</span><b class="buy">${fmt(R1+3*A)}</b></div>`:""}
+      ${S1?`<div class="row"><span class="sell">🔴 SHORT: ${fmt(S1)} ට පහළින් candle එකක් close වුණොත්</span></div>
+      <div class="row"><span>Stop-loss</span><b class="sell">${fmt(S1+1.5*A)}</b></div>
+      <div class="row"><span>Take-profit (1:2)</span><b class="buy">${fmt(S1-3*A)}</b></div>`:""}`;
+    $("lvl").innerHTML=cls==="neu"?scen:
       `<div class="row"><span>දිශාව</span><b class="${cls}">${long?"LONG (Buy)":"SHORT (Sell)"}</b></div>
        <div class="row"><span>Entry</span><b>${fmt(p)}</b></div>
        <div class="row"><span>Stop-loss</span><b class="sell">${fmt(sl)}</b></div>
@@ -307,7 +315,7 @@ async function run(){
 (async()=>{
   try{
     const t=await jget("https://api.binance.com/api/v3/ticker/24hr");
-    const u=t.filter(x=>x.symbol.endsWith("USDT")&&!/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol)&&+x.quoteVolume>1e6).sort((a,b)=>b.quoteVolume-a.quoteVolume);
+    const u=t.filter(x=>x.symbol.endsWith("USDT")&&!/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol)&&+x.quoteVolume>1e6&&!/^(USDC|USD1|RLUSD|FDUSD|TUSD|USDP|DAI|BUSD|USDE|AEUR|EUR|XUSD|PAXG)USDT$/.test(x.symbol)).sort((a,b)=>b.quoteVolume-a.quoteVolume);
     $("coins").innerHTML=u.map(x=>`<option value="${x.symbol.replace("USDT","")}">`).join("");
     $("chips").innerHTML="<span class='mt'>Top volume:</span>"+u.slice(0,14).map(x=>{const b=x.symbol.replace("USDT",""),c=+x.priceChangePercent;
       return `<span class="chip" onclick="$('coin').value='${b}';run()">${b} <span class="${c>=0?"buy":"sell"}">${c.toFixed(1)}%</span></span>`}).join("");
