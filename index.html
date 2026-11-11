@@ -56,6 +56,12 @@ h3{margin:0 0 4px;font-size:14px}
   <section>
     <div class="card"><canvas id="cv" height="470"></canvas></div>
     <div class="card"><h3>📌 Support / Resistance මට්ටම්</h3><div id="sr" class="mt">—</div></div>
+    <div class="card"><h3>📊 Signal Tracker (results)
+      <span style="float:right"><button id="refr" style="padding:3px 10px;font-size:12px">Refresh</button> <button id="clr" style="padding:3px 10px;font-size:12px">Clear all</button></span></h3>
+      <div id="trk_sum" class="mt" style="margin:4px 0 6px"></div>
+      <table><thead><tr><th>Coin</th><th>දිශාව</th><th>Status</th><th>Result</th><th></th></tr></thead><tbody id="trk"></tbody></table>
+      <div class="mt" style="font-size:12px;margin-top:8px">ℹ️ Signals save වෙන්නේ මේ browser එකේ පමණයි. Result ගණන් කරන්නේ signal එක add කළාට පස්සේ candles වල high/low අනුව. එකම candle එකේ SL සහ TP දෙකම වැදුනොත් SL මුලින් වැදුනා කියලා ගනියි. TP එකක් ළඟා වෙද්දී position එකෙන් 25% බැගින් close කරනවා කියලා ගණන් කරනවා (R = risk units). Fees සහ slippage ගණන් ගන්නේ නැහැ.</div>
+    </div>
   </section>
   <aside>
     <div class="card">
@@ -65,7 +71,7 @@ h3{margin:0 0 4px;font-size:14px}
       <div id="bars" style="margin-top:8px"></div>
       <div id="lvl" style="margin-top:8px"></div>
     </div>
-    <div class="card"><h3>📨 Signal Card <button id="copy" style="float:right;padding:3px 10px;font-size:12px">Copy</button></h3>
+    <div class="card"><h3>📨 Signal Card <span style="float:right"><button id="track" style="padding:3px 10px;font-size:12px;border-color:var(--y)">📍 Chart එකට add</button> <button id="copy" style="padding:3px 10px;font-size:12px">Copy</button></span></h3>
       <pre id="card" style="white-space:pre-wrap;margin:8px 0 0;font:13px/1.6 system-ui,'Iskoola Pota',sans-serif">—</pre></div>
     <div class="card"><h3>📈 Technical විශ්ලේෂණය</h3><ul id="l_t"></ul></div>
     <div class="card"><h3>🏗️ Fundamental විශ්ලේෂණය</h3><ul id="l_f"></ul></div>
@@ -215,11 +221,12 @@ async function gecko(base){
 }
 
 /* ---------- chart ---------- */
-function draw(d,T){
+function draw(d,T,sigs=[]){
   const cv=$("cv"),dpr=devicePixelRatio||1,W=cv.clientWidth,H=470;
   cv.width=W*dpr;cv.height=H*dpr;const x=cv.getContext("2d");x.scale(dpr,dpr);x.clearRect(0,0,W,H);
   const N=110,s=d.length-N,pad=62,ph=340,rh=90,gap=20,vis=d.slice(s);
   let hi=-1e18,lo=1e18;vis.forEach((k,i)=>{hi=Math.max(hi,k.h);lo=Math.min(lo,k.l)});
+  sigs.forEach(sg=>{[sg.trig,sg.sl,sg.tps[0]].forEach(v=>{hi=Math.max(hi,v);lo=Math.min(lo,v)})});
   const Y=v=>10+(hi-v)/(hi-lo)*(ph-20),cw=(W-pad)/N,X=i=>i*cw+cw/2;
   x.font="11px system-ui";x.lineWidth=1;
   for(let i=0;i<=5;i++){const v=lo+(hi-lo)*i/5,y=Y(v);x.strokeStyle="#252c3a";x.beginPath();x.moveTo(0,y);x.lineTo(W-pad,y);x.stroke();x.fillStyle="#8b94a7";x.fillText(fmt(v),W-pad+4,y+3)}
@@ -231,6 +238,13 @@ function draw(d,T){
   line(T.e20,"#f0b90b");line(T.e50,"#4c9aff");
   const lv=(v,col,t)=>{if(v<lo||v>hi)return;x.strokeStyle=col;x.lineWidth=1;x.setLineDash([5,4]);x.beginPath();x.moveTo(0,Y(v));x.lineTo(W-pad,Y(v));x.stroke();x.setLineDash([]);x.fillStyle=col;x.fillText(t+" "+fmt(v),6,Y(v)-3)};
   T.lv.sup.forEach(v=>lv(v,"#16c78899","S"));T.lv.res.forEach(v=>lv(v,"#ea394399","R"));
+  sigs.forEach(sg=>{
+    const L2=(v,col,t)=>{if(v<lo||v>hi)return;x.strokeStyle=col;x.lineWidth=1.8;x.setLineDash([]);x.beginPath();x.moveTo(0,Y(v));x.lineTo(W-pad,Y(v));x.stroke();
+      x.fillStyle=col;x.font="bold 11px system-ui";x.fillText((sg.long?"▲ ":"▼ ")+t+" "+fmt(v),W-pad-165,Y(v)-4);x.font="11px system-ui"};
+    L2(sg.trig,"#f0b90b",sg.cond&&sg.status==="pending"?"ENTRY (trigger)":"ENTRY");
+    L2(sg.sl,"#ff5d6c","SL");
+    sg.tps.forEach((v,i)=>L2(v,"#2ee6a6","TP"+(i+1)));
+  });
   x.fillStyle="#f0b90b";x.fillText("EMA20",6,14);x.fillStyle="#4c9aff";x.fillText("EMA50",56,14);x.fillStyle="#8b94a7";x.fillText("Bollinger",110,14);
   const oy=ph+gap,RY=v=>oy+(100-v)/100*rh;
   [30,50,70].forEach(v=>{x.strokeStyle="#252c3a";x.lineWidth=1;x.beginPath();x.moveTo(0,RY(v));x.lineTo(W-pad,RY(v));x.stroke();x.fillStyle="#8b94a7";x.fillText(v,W-pad+4,RY(v)+3)});
@@ -269,7 +283,8 @@ async function run(){
     const ls=lsR.status==="fulfilled"&&lsR.value[0]?+lsR.value[0].longShortRatio:null;
 
     const T=technical(d,hd,tf),F=fundamental(g),S=sentiment(fng,g,fr,ls);
-    draw(d,T);
+    const mine=loadSigs().filter(s=>s.base===base&&s.tf===tf&&s.status!=="closed");
+    draw(d,T,mine);
     list("l_t",T,"");list("l_f",F,"Fundamental දත්ත ලබාගත නොහැකි වුණා (CoinGecko එකේ මේ coin එක නැහැ හෝ rate limit එකක්). ටිකකින් නැවත උත්සාහ කරන්න.");
     list("l_s",S,"Sentiment දත්ත ලබාගත නොහැකි වුණා.");
 
@@ -333,9 +348,57 @@ ${tps.map((t,i)=>`${n1[i]} ${fmt(t.v)}  (+${t.roi.toFixed(0)}%)`).join("\n")}
 ⏱ Timeframe: ${tf} · Score: ${tot.toFixed(0)}/100
 ⚠️ Risk manage කරන්න. Financial advice නෙවෙයි.`;
     $("card").textContent=txt;
+    CURSIG={base,tf,long:dL,trig,sl:slc,tps:tps.map(t=>t.v),lev,slPct,cond:isN};
     $("copy").onclick=()=>{navigator.clipboard.writeText(txt).then(()=>{$("copy").textContent="Copied ✓";setTimeout(()=>$("copy").textContent="Copy",1500)})};
     $("status").textContent="යාවත්කාලීන: "+new Date().toLocaleTimeString();
+    renderTracker();
   }catch(e){$("status").textContent="❌ "+e.message}
+}
+
+/* ---------- signal tracker ---------- */
+let CURSIG=null;
+const loadSigs=()=>{try{return JSON.parse(localStorage.getItem("sigs")||"[]")}catch(e){return[]}};
+const saveSigs=a=>{try{localStorage.setItem("sigs",JSON.stringify(a))}catch(e){}};
+function addSig(){
+  if(!CURSIG)return;
+  const a=loadSigs(),now=Date.now();
+  a.push({...CURSIG,id:now,t:now,status:CURSIG.cond?"pending":"active",tpHit:0,R:null,end:null});
+  saveSigs(a);renderTracker();evalAll().then(run);
+}
+function delSig(id){saveSigs(loadSigs().filter(s=>s.id!==id));renderTracker();run()}
+async function evalSig(sg){
+  if(sg.status==="closed")return sg;
+  let ks;
+  try{ks=(await jget(`https://api.binance.com/api/v3/klines?symbol=${sg.base}USDT&interval=${sg.tf}&startTime=${sg.t}&limit=1000`)).map(k=>({t:k[0],h:+k[2],l:+k[3],c:+k[4],ct:k[6]}))}catch(e){return sg}
+  let st=sg.cond?"pending":"active",tpHit=0,end=null;
+  for(const k of ks){
+    if(st==="pending"){
+      if(k.ct<Date.now()&&(sg.long?k.c>sg.trig:k.c<sg.trig))st="active";
+      continue;
+    }
+    if(sg.long?k.l<=sg.sl:k.h>=sg.sl){st="closed";end="SL";break}
+    sg.tps.forEach((v,i)=>{if(sg.long?k.h>=v:k.l<=v)tpHit=Math.max(tpHit,i+1)});
+    if(tpHit===4){st="closed";end="TP4";break}
+  }
+  const R=st==="closed"?(end==="TP4"?2.5:0.25*tpHit*(tpHit+1)/2-0.25*(4-tpHit)):null;
+  return {...sg,status:st,tpHit,end,R};
+}
+async function evalAll(){
+  const done=await Promise.all(loadSigs().map(evalSig));
+  const cur=loadSigs(),m=new Map(done.map(s=>[s.id,s]));
+  saveSigs(cur.map(s=>m.get(s.id)||s));
+  renderTracker();
+}
+function renderTracker(){
+  const a=loadSigs().slice().reverse();
+  const cl=a.filter(s=>s.status==="closed"),w=cl.filter(s=>s.R>0).length,tot=cl.reduce((x,s)=>x+s.R,0);
+  $("trk_sum").textContent=cl.length?`Closed: ${cl.length} · Win rate: ${(w/cl.length*100).toFixed(0)}% · Total: ${tot>0?"+":""}${tot.toFixed(2)}R`:(a.length?"තවම close වුණු signals නැහැ":"");
+  $("trk").innerHTML=a.length?a.map(s=>{
+    const stx=s.status==="pending"?"⏳ Trigger එකට බලාගෙන":s.status==="active"?(s.tpHit?`🟢 Active · TP${s.tpHit} hit`:"🟢 Active"):
+      (s.end==="TP4"?"🏆 TP4 hit":s.tpHit?`TP${s.tpHit} → SL`:"❌ SL hit");
+    const res=s.status==="closed"?`<b class="${s.R>0?"buy":"sell"}">${s.R>0?"+":""}${s.R.toFixed(2)}R</b> <span class="mt">(${(s.R*s.slPct*s.lev*100).toFixed(0)}% ROI)</span>`:(s.tpHit?`<span class="buy">≥ TP${s.tpHit}</span>`:"—");
+    return `<tr class="c" onclick="$('coin').value='${s.base}';$('tf').value='${s.tf}';run()"><td>${s.base} <span class="mt">${s.tf}</span></td><td class="${s.long?"buy":"sell"}">${s.long?"LONG":"SHORT"}</td><td>${stx}</td><td>${res}</td><td><span class="mt" style="cursor:pointer" onclick="event.stopPropagation();delSig(${s.id})">✕</span></td></tr>`}).join(""):
+    `<tr><td colspan="5" class="mt">Signal එකක් track කරලා නැහැ. Signal Card එකේ "📍 Chart එකට add" ඔබන්න.</td></tr>`;
 }
 
 /* ---------- init ---------- */
@@ -348,6 +411,9 @@ ${tps.map((t,i)=>`${n1[i]} ${fmt(t.v)}  (+${t.roi.toFixed(0)}%)`).join("\n")}
       return `<span class="chip" onclick="$('coin').value='${b}';run()">${b} <span class="${c>=0?"buy":"sell"}">${c.toFixed(1)}%</span></span>`}).join("");
   }catch(e){}
 })();
+$("track").onclick=addSig;$("refr").onclick=()=>evalAll().then(run);
+$("clr").onclick=()=>{if(confirm("Track කරපු signals සියල්ල මකන්නද?")){saveSigs([]);renderTracker();run()}};
+evalAll();setInterval(evalAll,60000);
 $("go").onclick=run;$("coin").onkeydown=e=>{if(e.key==="Enter")run()};$("tf").onchange=run;
 addEventListener("resize",()=>{if($("sig").textContent!=="—")run()});
 run();
